@@ -134,6 +134,80 @@ html, body {
 }
 .bstart:active { background: rgba(0,229,160,0.08); }
 
+/* ── DONE STATE ── */
+.ec.done {
+  border-color: rgba(0,229,160,0.4);
+  background: rgba(0,229,160,0.04);
+}
+.ec.done .ec-img { background: rgba(0,229,160,0.08); }
+.ec.done .ename { color: var(--accent); }
+.ec.done .bstart { color: var(--text-dim); pointer-events: none; }
+
+@keyframes doneFlash {
+  0%   { background: rgba(0,229,160,0); border-color: var(--border); }
+  30%  { background: rgba(0,229,160,0.18); border-color: rgba(0,229,160,0.8); }
+  100% { background: rgba(0,229,160,0.04); border-color: rgba(0,229,160,0.4); }
+}
+.ec.done { animation: doneFlash 0.6s ease forwards; }
+
+@keyframes checkPop {
+  0%   { transform: scale(0); opacity: 0; }
+  60%  { transform: scale(1.3); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+.done-badge {
+  display: none; align-items: center; gap: 6px;
+  font-family: var(--mono); font-size: 10px; letter-spacing: 1.5px;
+  text-transform: uppercase; color: var(--accent); font-weight: 700;
+}
+.done-badge .chk {
+  width: 18px; height: 18px; background: var(--accent); color: var(--bg);
+  border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font-size: 11px; animation: checkPop 0.4s ease forwards;
+}
+.ec.done .done-badge { display: flex; }
+.ec.done .bdone-btn { display: none; }
+
+/* ── CALORIE BAR ── */
+.ec-indicators {
+  display: flex; border-top: 1px solid var(--border);
+  background: var(--surface2);
+}
+.ind {
+  flex: 1; padding: 8px 6px; text-align: center;
+  border-right: 1px solid var(--border);
+}
+.ind:last-child { border-right: none; }
+.ind-val {
+  font-family: var(--mono); font-size: 13px; font-weight: 700;
+  color: var(--text-sec);
+}
+.ec.done .ind-val { color: var(--accent); }
+.ind-lbl {
+  font-family: var(--mono); font-size: 8px; letter-spacing: 1px;
+  text-transform: uppercase; color: var(--text-dim); margin-top: 2px;
+}
+
+/* ── SESSION SUMMARY BAR ── */
+.summary-bar {
+  display: none;
+  background: var(--surface); border: 1px solid rgba(0,229,160,0.2);
+  padding: 14px 16px; margin-bottom: 16px;
+}
+.summary-bar.show { display: flex; gap: 0; }
+.sum-item {
+  flex: 1; text-align: center;
+  border-right: 1px solid var(--border);
+}
+.sum-item:last-child { border-right: none; }
+.sum-val {
+  font-family: var(--mono); font-size: 20px; font-weight: 700; color: var(--accent);
+}
+.sum-lbl {
+  font-family: var(--mono); font-size: 8px; letter-spacing: 1.5px;
+  text-transform: uppercase; color: var(--text-dim); margin-top: 3px;
+}
+
 /* ── EMPTY STATE ── */
 .empty {
   text-align: center; padding: 80px 20px;
@@ -341,6 +415,12 @@ html, body {
     <span class="ph-label" id="plan-count">0 exercises</span>
     <button class="badd" onclick="openModal()">+ Add</button>
   </div>
+  <div class="summary-bar" id="summary-bar">
+    <div class="sum-item"><div class="sum-val" id="sum-kal">0</div><div class="sum-lbl">kcal</div></div>
+    <div class="sum-item"><div class="sum-val" id="sum-vol">0</div><div class="sum-lbl">kg vol</div></div>
+    <div class="sum-item"><div class="sum-val" id="sum-done">0/0</div><div class="sum-lbl">done</div></div>
+  </div>
+
   <div id="ex-list">
     <div class="empty">
       <div class="empty-tag">No exercises</div>
@@ -524,10 +604,61 @@ function addExercise() {
     id: Date.now(), name: chosenEx.n, muscle, ic: chosenEx.ic,
     sets: +document.getElementById('in-sets').value,
     reps: +document.getElementById('in-reps').value,
-    weight: +document.getElementById('in-weight').value
+    weight: +document.getElementById('in-weight').value,
+    isDone: false
   });
   closeModal();
   renderExList();
+}
+
+// Calorie estimator per exercise (kcal per set, rough estimate based on MET × weight × time)
+// Assumes ~75kg bodyweight, ~45s per set
+const CAL_PER_SET = {
+  bench:8, fly:6, push:5, deadlift:12, pullup:9, squat:14,
+  curl:5, press:10, run:15, crunch:4, lateral:5, pushdown:5
+};
+const MUS_COLOR = {
+  Dada:'#e57373', Punggung:'#7986cb', Bahu:'#4db6ac',
+  Bisep:'#ffb74d', Trisep:'#ff8a65', Kaki:'#81c784', Perut:'#f06292', Kardio:'#4fc3f7'
+};
+
+function calcIndicators(ex) {
+  const calPerSet = CAL_PER_SET[ex.ic] || 7;
+  const kal = Math.round(calPerSet * ex.sets * (1 + ex.weight / 100));
+  const vol = ex.weight > 0 ? Math.round(ex.sets * ex.reps * ex.weight) : ex.sets * ex.reps;
+  const volLbl = ex.weight > 0 ? 'kg' : 'reps';
+  const mins = Math.round(ex.sets * 2.5); // ~2.5 min per set incl rest
+  return { kal, vol, volLbl, mins };
+}
+
+function updateSummary() {
+  const donelist = exercises.filter(e => e.isDone);
+  const totalKal = exercises.reduce((s,e) => s + (e.isDone ? calcIndicators(e).kal : 0), 0);
+  const totalVol = exercises.reduce((s,e) => s + (e.isDone ? calcIndicators(e).vol : 0), 0);
+  const bar = document.getElementById('summary-bar');
+  if (exercises.length > 0) {
+    bar.classList.add('show');
+    document.getElementById('sum-kal').textContent = totalKal;
+    document.getElementById('sum-vol').textContent = totalVol;
+    document.getElementById('sum-done').textContent = donelist.length + '/' + exercises.length;
+  } else {
+    bar.classList.remove('show');
+  }
+}
+
+function markDone(id) {
+  const ex = exercises.find(e => e.id === id);
+  if (!ex || ex.isDone) return;
+  ex.isDone = true;
+  const card = document.getElementById('ec-' + id);
+  if (card) {
+    card.classList.add('done');
+    const badge = card.querySelector('.done-badge');
+    if (badge) badge.style.display = 'flex';
+    // update indicator colors
+    card.querySelectorAll('.ind-val').forEach(el => el.style.color = 'var(--accent)');
+  }
+  updateSummary();
 }
 
 function delEx(id) { exercises = exercises.filter(e => e.id !== id); renderExList(); }
@@ -537,10 +668,14 @@ function renderExList() {
   document.getElementById('plan-count').textContent = exercises.length + ' exercise' + (exercises.length !== 1 ? 's' : '');
   if (!exercises.length) {
     el.innerHTML = `<div class="empty"><div class="empty-tag">No exercises</div>Tap <strong style="color:var(--text)">Add</strong> untuk mulai<br>workout plan kamu</div>`;
+    updateSummary();
     return;
   }
-  el.innerHTML = exercises.map(ex => `
-    <div class="ec">
+  el.innerHTML = exercises.map(ex => {
+    const ind = calcIndicators(ex);
+    const done = ex.isDone ? ' done' : '';
+    return `
+    <div class="ec${done}" id="ec-${ex.id}">
       <div class="ec-top">
         <div class="ec-img">${ICONS[ex.ic] || ICONS.bench}</div>
         <div class="ec-body">
@@ -556,12 +691,30 @@ function renderExList() {
           </div>
         </div>
       </div>
-      <div class="ec-foot">
-        <button class="bstart" onclick="goTimer('${ex.name}', ${ex.sets})">
-          → Mulai sesi
-        </button>
+      <div class="ec-indicators">
+        <div class="ind">
+          <div class="ind-val" style="${done ? 'color:var(--accent)' : ''}">~${ind.kal}</div>
+          <div class="ind-lbl">kcal</div>
+        </div>
+        <div class="ind">
+          <div class="ind-val" style="${done ? 'color:var(--accent)' : ''}">${ind.vol}</div>
+          <div class="ind-lbl">${ind.volLbl} vol</div>
+        </div>
+        <div class="ind">
+          <div class="ind-val" style="${done ? 'color:var(--accent)' : ''}">~${ind.mins}</div>
+          <div class="ind-lbl">menit</div>
+        </div>
       </div>
-    </div>`).join('');
+      <div class="ec-foot" style="display:flex;align-items:center;padding:0">
+        ${ex.isDone
+          ? `<div class="done-badge" style="display:flex;padding:12px 16px"><span class="chk">&#10003;</span> Selesai</div>`
+          : `<button class="bstart" style="flex:1" onclick="goTimer('${ex.name}', ${ex.sets})">→ Mulai sesi</button>
+             <button class="bdone-btn" onclick="markDone(${ex.id})" style="padding:14px 16px;font-family:var(--mono);font-size:10px;letter-spacing:1.5px;text-transform:uppercase;font-weight:700;background:transparent;color:var(--text-dim);border:none;border-left:1px solid var(--border);cursor:pointer;white-space:nowrap" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text-dim)'">✓ Done</button>`
+        }
+      </div>
+    </div>`;
+  }).join('');
+  updateSummary();
 }
 
 function goTimer(name, sets) {
